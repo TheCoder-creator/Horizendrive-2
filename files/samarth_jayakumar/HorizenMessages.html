@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HorizenMessages</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#0e1424;--panel:#161e36;--line:#26304f;--tx:#e8ecf7;--mut:#8a95b5;--ac:#6ea8ff;--ok:#4fd1a5;--bad:#ff6b6b}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.4 "Avenir Next",Segoe UI,system-ui,sans-serif}
+button,input{font:inherit;color:inherit}
+input{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%}
+input:focus-visible,button:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+button{background:var(--ac);color:#08101f;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:600}
+button.g{background:transparent;color:var(--tx);border:1px solid var(--line)}
+button.r{background:var(--bad);color:#fff}
+[hidden]{display:none!important}
+#auth{display:grid;place-items:center;height:100%;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;width:100%;max-width:360px;display:grid;gap:10px}
+.card h1{margin:0 0 4px;font-size:24px}.mut{color:var(--mut);font-size:13px}
+#app{display:flex;height:100%}
+#side{width:320px;border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--panel)}
+#side header,#head{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+#side header b{flex:1}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;background:none;color:var(--mut);border-radius:0;border-bottom:2px solid transparent}
+.tabs button.on{color:var(--tx);border-color:var(--ac)}
+.list{overflow:auto;flex:1}
+.row{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;cursor:pointer}
+.row:hover,.row.on{background:#1d2748}.row span{flex:1;overflow:hidden;text-overflow:ellipsis}
+.pad{padding:12px 14px;display:grid;gap:8px}
+#main{flex:1;display:flex;flex-direction:column;min-width:0}
+#head b{flex:1}
+#msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:6px}
+.m{max-width:70%;padding:8px 12px;border-radius:14px;background:var(--panel);align-self:flex-start;word-wrap:break-word}
+.m.me{background:var(--ac);color:#08101f;align-self:flex-end}
+.m small{display:block;color:var(--mut);font-size:11px}.m.me small{color:#2b3a5e}
+#send{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+.empty{margin:auto;color:var(--mut);text-align:center}
+#call{position:fixed;inset:0;background:#05080f;display:grid;grid-template-rows:1fr auto;z-index:9}
+#rv{width:100%;height:100%;object-fit:contain;background:#000;min-height:0}
+#lv{position:absolute;right:16px;top:16px;width:140px;border-radius:10px;border:1px solid var(--line);background:#000}
+#cb{padding:16px;text-align:center}
+#back{display:none}
+@media(max-width:700px){#side{width:100%}#main{display:none}#app.open #side{display:none}#app.open #main{display:flex}#back{display:block}}
+</style></head><body>
+
+<section id="auth" hidden>
+ <div class="card">
+  <h1>HorizenMessages</h1>
+  <input id="un" placeholder="Username (sign up only)" autocomplete="username">
+  <input id="em" type="email" placeholder="Email" autocomplete="email">
+  <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="li">Log in</button>
+  <button id="su" class="g">Create account</button>
+  <div id="am" class="mut" role="status"></div>
+ </div>
+</section>
+
+<section id="done" hidden>
+ <div class="card"><h1 id="dh">Confirming…</h1><div class="mut" id="dm"></div><button id="go" hidden>Open HorizenMessages</button></div>
+</section>
+
+<div id="app" hidden>
+ <aside id="side">
+  <header><b id="who"></b><button class="g" id="lo">Log out</button></header>
+  <div class="tabs"><button id="t1" class="on">Chats</button><button id="t2">Friends</button></div>
+  <div id="chats" class="list"></div>
+  <div id="friends" class="list" hidden>
+   <div class="pad"><input id="fu" placeholder="Add friend by username"><button id="fa">Send request</button></div>
+   <div id="fl"></div>
+  </div>
+ </aside>
+ <main id="main">
+  <div id="head" hidden>
+   <button class="g" id="back">Back</button><b id="cn"></b>
+   <button class="g" id="ca">Call</button><button class="g" id="cv">Video call</button>
+  </div>
+  <div id="msgs"><div class="empty">Choose a chat, or add a friend to start one.</div></div>
+  <form id="send" hidden><input id="mi" placeholder="Write a message" autocomplete="off"><button>Send</button></form>
+ </main>
+</div>
+
+<div id="call" hidden>
+ <video id="rv" autoplay playsinline></video><video id="lv" autoplay playsinline muted></video>
+ <div id="cb"><div id="cs" class="mut"></div><button class="r" id="hu">Hang up</button></div>
+</div>
+
+<script>
+const sb=supabase.createClient('https://uwpcgccammspgzocjsco.supabase.co','sb_publishable_VovyqA7vY-IVd2qke-sCRg_l1LdpMMV');
+// Link in the confirmation email. Replace website.com with your domain.
+const CONFIRM_URL='https://website.com/email-confirmation';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let me,P={},convs=[],cur=null,started=false;
+
+/* ---------- Auth + email confirmation ---------- */
+const note=t=>$('am').textContent=t;
+$('su').onclick=async()=>{
+  const username=$('un').value.trim(),email=$('em').value.trim(),password=$('pw').value;
+  if(!username||!email||password.length<6)return note('Enter a username, email and a password of 6+ characters.');
+  const {error}=await sb.auth.signUp({email,password,options:{data:{username},emailRedirectTo:CONFIRM_URL}});
+  if(error)return note(error.message);
+  localStorage.setItem('email','confirmation'); // set when the confirmation email is sent
+  note('Confirmation email sent. Open the link in it, then log in.');
+};
+$('li').onclick=async()=>{
+  const {error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
+  if(error)note(error.message);
+};
+$('lo').onclick=()=>sb.auth.signOut().then(()=>location.href=location.pathname.replace(/email-confirmation.*/,''));
+$('go').onclick=()=>{location.href=location.pathname.replace(/email-confirmation.*/,'')};
+
+async function approved(u){const {data}=await sb.from('approved_acounts').select('user_id').eq('user_id',u.id).maybeSingle();return !!data}
+async function confirmPage(){
+  $('auth').hidden=true;$('app').hidden=true;$('done').hidden=false;
+  const say=(h,m)=>{$('dh').textContent=h;$('dm').textContent=m};
+  if(localStorage.getItem('email')!=='confirmation')return say('Can\u2019t confirm here','Open this link in the same browser you signed up with.');
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session)return say('Link not verified','Try the link in your email again.');
+  const u=session.user,{error}=await sb.from('approved_acounts').upsert({user_id:u.id,email:u.email});
+  if(error)return say('Activation failed',error.message);
+  localStorage.removeItem('email');say('Email confirmed','Your account is activated.');$('go').hidden=false;
+}
+async function boot(){
+  if(location.pathname.includes('email-confirmation'))return confirmPage();
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){$('app').hidden=true;$('auth').hidden=false;return}
+  if(await approved(session.user))start(session.user);
+  else{await sb.auth.signOut({scope:'local'});$('app').hidden=true;$('auth').hidden=false;note('Your account isn\u2019t confirmed yet. Check your email for the link.')}
+}
+sb.auth.onAuthStateChange((e,s)=>{if(e==='SIGNED_OUT'){location.reload()}else if(e==='SIGNED_IN'&&s&&!started&&!location.pathname.includes('email-confirmation'))boot()});
+boot();
+
+async function start(u){
+  if(started)return;started=true;me=u;
+  $('auth').hidden=true;$('app').hidden=false;
+  await loadProfiles();$('who').textContent=P[me.id]?.username||'Me';
+  await Promise.all([loadConvs(),loadFriends()]);
+  sb.channel('db')
+   .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages'},p=>{if(p.new.conversation_id===cur)addMsg(p.new)})
+   .on('postgres_changes',{event:'*',schema:'public',table:'friendships'},loadFriends)
+   .on('postgres_changes',{event:'INSERT',schema:'public',table:'conversation_members'},loadConvs).subscribe();
+  sb.channel('u:'+me.id).on('broadcast',{event:'sig'},({payload})=>onSig(payload)).subscribe();
+}
+async function loadProfiles(){const {data}=await sb.from('profiles').select('*');(data||[]).forEach(p=>P[p.id]=p)}
+const uname=id=>P[id]?.username||'Unknown';
+
+/* ---------- Tabs ---------- */
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+function tab(n){$('t1').classList.toggle('on',n==1);$('t2').classList.toggle('on',n==2);$('chats').hidden=n!=1;$('friends').hidden=n!=2}
+
+/* ---------- Friends ---------- */
+let fr=[];
+async function loadFriends(){
+  await loadProfiles();
+  const {data}=await sb.from('friendships').select('*');fr=data||[];
+  $('fl').innerHTML=fr.map(f=>{
+    const other=f.requester===me.id?f.addressee:f.requester;
+    if(f.status==='accepted')return `<div class="row"><span>${esc(uname(other))}</span><button data-dm="${other}">Message</button></div>`;
+    if(f.addressee===me.id)return `<div class="row"><span>${esc(uname(other))} wants to be friends</span><button data-ok="${f.id}">Accept</button></div>`;
+    return `<div class="row"><span>${esc(uname(other))}</span><span class="mut">Request sent</span></div>`;
+  }).join('')||'<div class="pad mut">No friends yet. Add one by username.</div>';
+}
+$('fl').onclick=e=>{
+  if(e.target.dataset.dm)openDM(e.target.dataset.dm);
+  if(e.target.dataset.ok)sb.from('friendships').update({status:'accepted'}).eq('id',e.target.dataset.ok).then(loadFriends);
+};
+$('fa').onclick=async()=>{
+  const n=$('fu').value.trim().toLowerCase();
+  const t=Object.values(P).find(p=>p.username.toLowerCase()===n);
+  if(!t)return alert('No user with that username.');
+  if(t.id===me.id)return alert("That's you.");
+  const {error}=await sb.from('friendships').insert({requester:me.id,addressee:t.id});
+  if(error)alert(error.message);else{$('fu').value='';loadFriends()}
+};
+
+/* ---------- Conversations ---------- */
+async function loadConvs(){
+  const {data}=await sb.from('conversations').select('*,conversation_members(user_id)').order('created_at',{ascending:false});
+  convs=data||[];
+  $('chats').innerHTML='<div class="pad"><button class="g" id="ng">New group</button></div>'+
+    (convs.map(c=>`<div class="row ${c.id===cur?'on':''}" data-c="${c.id}"><span>${esc(cname(c))}</span>${c.is_group?'<small class="mut">Group</small>':''}</div>`).join('')||'<div class="pad mut">No chats yet.</div>');
+  $('ng').onclick=newGroup;
+}
+const other=c=>c.conversation_members.map(m=>m.user_id).find(i=>i!==me.id);
+const cname=c=>c.is_group?c.name:uname(other(c));
+$('chats').onclick=e=>{const r=e.target.closest('[data-c]');if(r)openConv(r.dataset.c)};
+
+async function mk(name,isGroup,ids){
+  const {data:c,error}=await sb.from('conversations').insert({name,is_group:isGroup,created_by:me.id}).select().single();
+  if(error)return alert(error.message);
+  const {error:e2}=await sb.from('conversation_members').insert([me.id,...ids].map(user_id=>({conversation_id:c.id,user_id})));
+  if(e2)return alert(e2.message);
+  await loadConvs();return c.id;
+}
+async function openDM(fid){
+  let c=convs.find(c=>!c.is_group&&other(c)===fid);
+  openConv(c?c.id:await mk(null,false,[fid]));tab(1);
+}
+async function newGroup(){
+  const name=prompt('Group name');if(!name)return;
+  const names=(prompt('Friends to add (usernames, comma separated)')||'').split(',').map(s=>s.trim().toLowerCase());
+  const ids=fr.filter(f=>f.status==='accepted').map(f=>f.requester===me.id?f.addressee:f.requester).filter(i=>names.includes(uname(i).toLowerCase()));
+  if(!ids.length)return alert('Add at least one friend you are already connected with.');
+  openConv(await mk(name,true,ids));
+}
+
+/* ---------- Messages ---------- */
+async function openConv(id){
+  cur=id;const c=convs.find(c=>c.id===id);
+  $('app').classList.add('open');$('head').hidden=false;$('send').hidden=false;
+  $('cn').textContent=cname(c);$('ca').hidden=$('cv').hidden=c.is_group;
+  document.querySelectorAll('#chats .row').forEach(r=>r.classList.toggle('on',r.dataset.c===id));
+  const {data}=await sb.from('messages').select('*').eq('conversation_id',id).order('created_at');
+  $('msgs').innerHTML='';(data||[]).forEach(addMsg);
+}
+function addMsg(m){
+  const d=document.createElement('div');d.className='m'+(m.sender_id===me.id?' me':'');
+  d.innerHTML=`<small>${esc(uname(m.sender_id))} · ${new Date(m.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small>${esc(m.body)}`;
+  $('msgs').append(d);$('msgs').scrollTop=1e9;
+}
+$('send').onsubmit=async e=>{
+  e.preventDefault();const body=$('mi').value.trim();if(!body||!cur)return;$('mi').value='';
+  const {error}=await sb.from('messages').insert({conversation_id:cur,sender_id:me.id,body});
+  if(error)alert(error.message);
+};
+$('back').onclick=()=>$('app').classList.remove('open');
+
+/* ---------- Calls: WebRTC signaled over Supabase Realtime broadcast ---------- */
+let pc,stream,peer,pend=[],chans={};
+const ICE={iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
+function sig(to,p){
+  if(!chans[to]){chans[to]=sb.channel('u:'+to);chans[to].subscribe()}
+  chans[to].send({type:'broadcast',event:'sig',payload:{...p,from:me.id}});
+}
+async function setup(video){
+  stream=await navigator.mediaDevices.getUserMedia({audio:true,video});
+  $('lv').srcObject=stream;$('lv').hidden=!video;
+  pc=new RTCPeerConnection(ICE);
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  pc.ontrack=e=>{$('rv').srcObject=e.streams[0];$('cs').textContent='Connected'};
+  pc.onicecandidate=e=>e.candidate&&sig(peer,{t:'ice',c:e.candidate});
+  $('call').hidden=false;$('cs').textContent='Calling '+uname(peer)+'…';
+}
+async function startCall(video){
+  const c=convs.find(c=>c.id===cur);if(!c||c.is_group||pc)return;
+  peer=other(c);
+  try{await setup(video)}catch(e){hang(false);return alert('Allow microphone'+(video?' and camera':'')+' access to call.')}
+  const o=await pc.createOffer();await pc.setLocalDescription(o);
+  sig(peer,{t:'offer',sdp:pc.localDescription,video});
+}
+$('ca').onclick=()=>startCall(false);$('cv').onclick=()=>startCall(true);
+async function flush(){for(const c of pend)await pc.addIceCandidate(c);pend=[]}
+async function onSig(p){
+  if(p.t==='offer'){
+    if(pc){sig(p.from,{t:'busy'});return}
+    if(!confirm(uname(p.from)+(p.video?' is video calling you. Answer?':' is calling you. Answer?'))){sig(p.from,{t:'end'});return}
+    peer=p.from;
+    try{await setup(p.video)}catch(e){hang(true);return alert('Allow microphone access to answer.')}
+    await pc.setRemoteDescription(p.sdp);
+    const a=await pc.createAnswer();await pc.setLocalDescription(a);
+    sig(peer,{t:'answer',sdp:pc.localDescription});await flush();
+  }else if(p.t==='answer'&&pc){await pc.setRemoteDescription(p.sdp);await flush()}
+  else if(p.t==='ice'){pc&&pc.remoteDescription?pc.addIceCandidate(p.c):pend.push(p.c)}
+  else if((p.t==='end'||p.t==='busy')&&pc&&p.from===peer){if(p.t==='busy')alert('They are on another call.');hang(false)}
+}
+function hang(notify){
+  if(notify&&peer)sig(peer,{t:'end'});
+  stream&&stream.getTracks().forEach(t=>t.stop());pc&&pc.close();
+  pc=stream=peer=null;pend=[];$('call').hidden=true;$('rv').srcObject=$('lv').srcObject=null;
+}
+$('hu').onclick=()=>hang(true);
+</script>
+</body></html>
